@@ -31,6 +31,7 @@ def init(ContextInfo):
     ContextInfo.num_stocks = 5
     ContextInfo.per_amount = 10000
     ContextInfo.accId='87000986'
+    ContextInfo.need_cancel_status = [48,49,50,55,86]
     # 加载模型
     with open('D:\quant\data\lude\model.pkl', 'rb') as file:
         ContextInfo.loaded_model = pickle.load(file)
@@ -62,27 +63,28 @@ def pre_order_for_stop_win(ContextInfo):
 
 
 def handlebar(ContextInfo):
-    index = ContextInfo.barpos
-    this_date = datetime.fromtimestamp(ContextInfo.get_bar_timetag(index)/1000)
-    this_date_str = datetime.strftime(this_date, "%Y-%m-%d %H:%M:%S")
-    ContextInfo.current_date_obj = datetime.strftime(this_date, "%Y-%m-%d")
-    print(this_date_str)
-    position_info = get_trade_detail_data(ContextInfo.accId, 'stock', 'position')
-    ContextInfo.my_positions = []
-    for i in position_info:
-        stock = i.m_strInstrumentID
-        if i.m_strExchangeName == '上证所':
-            stock = stock + ".SH"
-        if i.m_strExchangeName == '深交所':
-            stock = stock + ".SZ"
-        volume = i.m_nVolume
-        if volume>0:
-            ContextInfo.my_positions.append(stock)
-    if this_date_str[-8:] == "14:55:00":
-        print("开始选债")
-        cancel_order(ContextInfo)
-        selectOrder(ContextInfo)
-    pass
+    if ContextInfo.is_last_bar():
+        index = ContextInfo.barpos
+        this_date = datetime.fromtimestamp(ContextInfo.get_bar_timetag(index)/1000)
+        this_date_str = datetime.strftime(this_date, "%Y-%m-%d %H:%M:%S")
+        ContextInfo.current_date_obj = datetime.strftime(this_date, "%Y-%m-%d")
+        print(this_date_str)
+        position_info = get_trade_detail_data(ContextInfo.accId, 'stock', 'position')
+        ContextInfo.my_positions = []
+        for i in position_info:
+            stock = i.m_strInstrumentID
+            if i.m_strExchangeName == '上证所':
+                stock = stock + ".SH"
+            if i.m_strExchangeName == '深交所':
+                stock = stock + ".SZ"
+            volume = i.m_nVolume
+            if volume>0:
+                ContextInfo.my_positions.append(stock)
+        if this_date_str[-8:] == "14:55:00":
+            print("开始选债")
+            cancel_order(ContextInfo)
+            selectOrder(ContextInfo)
+
 
 def selectOrder(ContextInfo):
     day_data = queryCBInfo(ContextInfo)
@@ -156,7 +158,8 @@ def cancel_order(ContextInfo):
             order_stock = order_stock + ".SH"
         if j.m_strExchangeName == '深交所':
             order_stock = order_stock + ".SZ"
-        if j.m_dCancelAmount == 0 :
+        print(j.m_nOrderStatus)
+        if j.m_nOrderStatus in ContextInfo.need_cancel_status:
             cancel(j.m_strOrderSysID,ContextInfo.accId, 'STOCK', ContextInfo)
 
 # def queryCBInfo(ContextInfo):
@@ -184,6 +187,7 @@ def cancel_order(ContextInfo):
 #         ytm = aniu_data['ytmRate']
 #         bond_prem = aniu_data['pureBondPrem']
 #         option_value = aniu_data['optionVal']
+#         # todo 从QMT取
 #         vol = price_data.iloc[4]['volume']
 #         amount = aniu_data['amount']
 #         pct_chg_stk = aniu_data['stockChgPct']
@@ -244,6 +248,8 @@ def cancel_order(ContextInfo):
 #             time.sleep(1)
 #             retry += 1
 #     return df
+
+
 
 
 
