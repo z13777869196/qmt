@@ -5,7 +5,7 @@ from xtquant.xttrader import XtQuantTrader
 from xtquant import xtconstant
 
 # miniQMT安装路径
-mini_qmt_path = r'D:\quant\gjqmt\userdata_mini'
+mini_qmt_path = r'D:\quant\国金证券QMT交易端\userdata_mini'
 # QMT账号
 account = '87000986'
 # 创建session_id
