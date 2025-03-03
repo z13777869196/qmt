@@ -1,4 +1,4 @@
-#encoding:gbk
+# encoding:gbk
 import pandas as pd
 import numpy as np
 import talib
@@ -9,10 +9,18 @@ import requests
 from sklearn.preprocessing import MinMaxScaler
 
 
+class a(): pass
+
+
+A = a()
+A.has_select_order = False
+
+
 def fillNanWithMean(use_data):
     column_means = use_data.mean()
     # 填充NaN值为每列的均值
     return use_data.fillna(column_means)
+
 
 def removeCall(day_data):
     day_data = day_data[day_data['is_call'] != '已满足强赎条件']
@@ -20,31 +28,40 @@ def removeCall(day_data):
     day_data = day_data[day_data['is_call'] != '公告实施强赎']
     day_data = day_data[day_data['is_call'] != '公告到期赎回']
     day_data = day_data[day_data['is_call'] != '已公告强赎']
+    day_data = day_data[day_data['pct_chg'] <= 0.195]
     return day_data
 
 
-
 def init(ContextInfo):
-    ContextInfo.my_positions=[]
+    ContextInfo.my_positions = []
     ContextInfo.stop_win_ratio = 0.06
     ContextInfo.change_percentile = 100
     ContextInfo.num_stocks = 5
-    ContextInfo.per_amount = 10000
-    ContextInfo.accId='87000986'
-    ContextInfo.need_cancel_status = [48,49,50,55,86]
-    # 加载模型
-    with open('D:\quant\data\lude\model.pkl', 'rb') as file:
-        ContextInfo.loaded_model = pickle.load(file)
+    ContextInfo.per_amount = 40000
+    ContextInfo.accId = '87000986'
+    ContextInfo.need_cancel_status = [48, 49, 50, 55]
+    ContextInfo.position_volume = {}
+    ContextInfo.has_pre_order = False
+    ContextInfo.select_order_time = "14:57:00"
     ContextInfo.use_columns = ['bias_5', 'dblow', 'remain_size', 'remain_cap',
-                    'total_mv', 'left_years', 'pct_chg',
-                    'volatility_stk', 'conv_prem',
-                    'ytm', 'bond_prem', 'option_value', 'vol',
-                    'amount', 'pct_chg_stk', 'turnover',
-                    'pct_chg_5', 'pct_chg_5_stk', 'open_pct_chg',
-                    'high_pct_chg', 'low_pct_chg']
-    ContextInfo.run_time("pre_order_for_stop_win","1nDay","2019-10-14 13:20:00","SH")
+                               'total_mv', 'left_years', 'pct_chg',
+                               'volatility_stk', 'conv_prem',
+                               'ytm', 'bond_prem', 'option_value', 'vol',
+                               'amount', 'pct_chg_stk', 'turnover',
+                               'pct_chg_5', 'pct_chg_5_stk', 'open_pct_chg',
+                               'high_pct_chg', 'low_pct_chg']
+    ContextInfo.run_time("pre_order_for_stop_win", "1nDay", "2025-02-18 09:21:00", "SH")
+
+
+
 
 def pre_order_for_stop_win(ContextInfo):
+    # now = datetime.now()
+    # time_str = int(now.strftime("%H%M%S"))
+    # print(time_str)
+    # if ContextInfo.has_pre_order == False and 92000 <= time_str and time_str<=92500:
+    A.has_select_order = False
+    cancel_order(ContextInfo)
     position_info = get_trade_detail_data(ContextInfo.accId, 'stock', 'position')
     for i in position_info:
         stock = i.m_strInstrumentID
@@ -53,19 +70,21 @@ def pre_order_for_stop_win(ContextInfo):
         if i.m_strExchangeName == '深交所':
             stock = stock + ".SZ"
         volume = i.m_nVolume
-        df = ContextInfo.get_market_data_ex(['close'], stock_code=[stock], period='1d',count=2)
+        df = ContextInfo.get_market_data_ex(['close'], stock_code=[stock], period='1d', count=2)
         print(df)
-        df = df[stock].iloc[0]['close']
-        stop_win_price = df * (1 + ContextInfo.stop_win_ratio)
-        if volume>0:
-            print(stock + "挂止盈单" + str(df))
-            passorder(24, 1101, ContextInfo.accId, stock, 6, stop_win_price, volume, ContextInfo)
+        if df != None and df[stock].empty is False:
+            df = df[stock].iloc[0]['close']
+            stop_win_price = df * (1 + ContextInfo.stop_win_ratio)
+            if volume > 0:
+                print(stock + "挂止盈单" + str(stop_win_price))
+                passorder(24, 1101, ContextInfo.accId, stock, 11, stop_win_price, volume, 2, ContextInfo)
+                # ContextInfo.has_pre_order=True
 
 
 def handlebar(ContextInfo):
     if ContextInfo.is_last_bar():
         index = ContextInfo.barpos
-        this_date = datetime.fromtimestamp(ContextInfo.get_bar_timetag(index)/1000)
+        this_date = datetime.fromtimestamp(ContextInfo.get_bar_timetag(index) / 1000)
         this_date_str = datetime.strftime(this_date, "%Y-%m-%d %H:%M:%S")
         ContextInfo.current_date_obj = datetime.strftime(this_date, "%Y-%m-%d")
         print(this_date_str)
@@ -78,15 +97,21 @@ def handlebar(ContextInfo):
             if i.m_strExchangeName == '深交所':
                 stock = stock + ".SZ"
             volume = i.m_nVolume
-            if volume>0:
+            if volume > 0:
                 ContextInfo.my_positions.append(stock)
-        if this_date_str[-8:] == "14:55:00":
+                ContextInfo.position_volume[stock] = volume
+        if A.has_select_order == False and this_date_str[-8:] == ContextInfo.select_order_time:
+            print(ContextInfo.my_positions)
             print("开始选债")
             cancel_order(ContextInfo)
             selectOrder(ContextInfo)
+            A.has_select_order = True
 
 
 def selectOrder(ContextInfo):
+    # 加载模型
+    with open('D:\quant\data\lude\model.pkl', 'rb') as file:
+        loaded_model = pickle.load(file)
     day_data = queryCBInfo(ContextInfo)
     if day_data.empty:
         return []
@@ -97,42 +122,76 @@ def selectOrder(ContextInfo):
     use_data = fillNanWithMean(day_data[ContextInfo.use_columns])
     scaler = MinMaxScaler()
     X_test = scaler.fit_transform(use_data.rank())
-    y_pred = ContextInfo.loaded_model.predict(X_test)
+    y_pred = loaded_model.predict(X_test)
     num_stocks = ContextInfo.num_stocks
     codes = day_data['code'].values
-    limit_y =  np.percentile(y_pred, ContextInfo.change_percentile)
+    limit_y = np.percentile(y_pred, ContextInfo.change_percentile)
     pred_dict = dict(zip(codes, y_pred))
-    position_y =[[key,pred_dict.get(key)] for key in ContextInfo.my_positions]
-    position_df = pd.DataFrame(position_y,columns=['code','y'])
-    sell_num_limit = len(position_df[position_df['y']<limit_y])
-    ContextInfo.my_positions  = list(position_df.sort_values(by=['y'], ascending=True)['code'])
+    position_y = [[key, pred_dict.get(key)] for key in ContextInfo.my_positions]
+    position_df = pd.DataFrame(position_y, columns=['code', 'y'])
+    sell_num_limit = len(position_df[position_df['y'] < limit_y])
+    ContextInfo.my_positions = list(position_df.sort_values(by=['y'], ascending=True)['code'])
     top_indices = np.argsort(y_pred)[-num_stocks:]
     select_code = day_data.iloc[top_indices]['code'].values
     print(select_code)
-    need_remove=[]
+    need_remove = []
     sell_count = 0
+    table = [
+    ]
     for mycode in ContextInfo.my_positions:
-        if sell_count<sell_num_limit and mycode not in select_code:
+        if sell_count < sell_num_limit and mycode not in select_code:
             # clear
             print(f"卖出 {mycode}")
-            order_target_percent(mycode, 0,'COMPETE', ContextInfo, ContextInfo.accId)
+            # passorder(24, 1123, ContextInfo.accId, mycode, 6, 100, 1, 1, ContextInfo)
             need_remove.append(mycode)
             sell_count = sell_count + 1
     for i in need_remove:
+        table.append({'stock': i, 'weight': 0.11, 'quantity': ContextInfo.position_volume[i], 'optType': 24})
         ContextInfo.my_positions.remove(i)
     need_buy_num = num_stocks - len(ContextInfo.my_positions)
     j = 0
-    need_append=[]
+    need_append = []
     for code in select_code:
-        if j<need_buy_num and code not in ContextInfo.my_positions:
+        if j < need_buy_num and code not in ContextInfo.my_positions:
             print(f"买入 {code}")
-            order_target_value(code, ContextInfo.per_amount, 'COMPETE', ContextInfo,ContextInfo.accId)
+            # passorder(23, 1102, ContextInfo.accId, code, 4, 100, ContextInfo.per_amount, 1, ContextInfo)
             need_append.append(code)
             j = j + 1
     for i in need_append:
+        minu_data = ContextInfo.get_market_data_ex(['close'],stock_code=[i],  period='1m',count=1)
+        minu_data = minu_data[i].iloc[0]['close']
+        count = int(int(ContextInfo.per_amount/minu_data)/10)*10
+        table.append({'stock': i, 'weight': 0.11, 'quantity': count, 'optType': 23})
         ContextInfo.my_positions.append(i)
-    return need_append
-    pass
+    print(table)
+    basket={'name':'debt_basket','stocks':table}
+    set_basket(basket)
+    algoParam={
+    'm_dLimitOverRate': 0.25,      # 量比 25%
+    'm_dMinAmountPerOrder':10000,      # 委托最小金额
+    'm_dMaxAmountPerOrder':30000,  # 委托最大金额
+    'm_nStopTradeForOwnHiLow': 0,  # 涨跌停控制
+    'm_dMulitAccountRate':0.30,    # 多账号总量比
+    'm_strCmdRemark':  '篮子下单'  # 投资备注
+    }
+    smart_algo_passorder(
+        35,
+        2101,
+        ContextInfo.accId,
+        'debt_basket',
+        12,              #市价
+        0,             #数量
+        1,              #按篮子下单
+        '',      #策略名
+        2,               # quickTrade
+        '篮子下单',
+        'TWAP',
+        "10:25:00",      # 开始时间
+        "15:00:00",      # 结束时间
+        algoParam,       # 算法参数
+        ContextInfo
+        )
+
 
 def queryCBInfo(ContextInfo):
     df = None
@@ -150,6 +209,7 @@ def queryCBInfo(ContextInfo):
             print(f"请求失败，状态码: {response.status_code}，错误信息: {response.text}")
     return df
 
+
 def cancel_order(ContextInfo):
     orders = get_trade_detail_data(ContextInfo.accId, 'stock', 'ORDER')
     for j in orders:
@@ -160,7 +220,7 @@ def cancel_order(ContextInfo):
             order_stock = order_stock + ".SZ"
         print(j.m_nOrderStatus)
         if j.m_nOrderStatus in ContextInfo.need_cancel_status:
-            cancel(j.m_strOrderSysID,ContextInfo.accId, 'STOCK', ContextInfo)
+            cancel(j.m_strOrderSysID, ContextInfo.accId, 'STOCK', ContextInfo)
 
 # def queryCBInfo(ContextInfo):
 #     aniu_df = query_aniudata(ContextInfo)
@@ -248,6 +308,34 @@ def cancel_order(ContextInfo):
 #             time.sleep(1)
 #             retry += 1
 #     return df
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
