@@ -67,6 +67,7 @@ class Trade(XtQuantTraderCallback):
         self.xt_trader.start()
         # 建立交易连接，返回0表示连接成功
         connect_result = self.xt_trader.connect()
+        print(connect_result)
         if connect_result != 0:
             import sys
             sys.exit('链接失败，程序即将退出 %d' % connect_result)
